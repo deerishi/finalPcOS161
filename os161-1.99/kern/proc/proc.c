@@ -49,8 +49,9 @@
 #include <vnode.h>
 #include <vfs.h>
 #include <synch.h>
-#include <kern/fcntl.h>  
-
+#include <kern/fcntl.h> 
+#include <limits.h> 
+#include "opt-A2.h"
 /*
  * The process for the kernel; this holds all the kernel-only threads.
  */
@@ -69,17 +70,56 @@ static struct semaphore *proc_count_mutex;
 struct semaphore *no_proc_sem;   
 #endif  // UW
 
+#if OPT_A2
+struct proc *processList[256]; //no need to declare static. the whole pooint if declaring static is to lkimit the scope
+// of the variable to that file itself i mean the .c file npt the .h file, never declare a golabl/static 
+//variable in a header file. always declare it in the .c file, if you wanna use that variable in 
+//mulitple .c file its best to declare the variable as extern in the .h file.
 
+struct lock *mutex;
+#endif
 
 /*
  * Create a proc structure.
  */
-static
+ 
+
+
+#ifdef OPT_A2
+//clean up exited PID's'
+void clean_up_exitedPids()
+{
+    int i;
+    for(i=0;i<256;i++)
+    {
+        if(processList[i]!=NULL && )
+    }
+}
+
+
 struct proc *
 proc_create(const char *name)
 {
-	struct proc *proc;
+#if OPT_A2
+     int i;
+     lock_acquire(mutex);
+    for(i=2;i<=256;i++)
+    {
+        if(processList[i]==NULL)
+        {
 
+            break;
+        }
+    }
+
+    if(i>256)
+    {
+        panic("proc_create failed\n");
+    }
+#endif
+    
+	struct proc *proc;
+    
 	proc = kmalloc(sizeof(*proc));
 	if (proc == NULL) {
 		return NULL;
@@ -89,7 +129,7 @@ proc_create(const char *name)
 		kfree(proc);
 		return NULL;
 	}
-
+    proc->p_pid=i;
 	threadarray_init(&proc->p_threads);
 	spinlock_init(&proc->p_lock);
 
@@ -98,11 +138,21 @@ proc_create(const char *name)
 
 	/* VFS fields */
 	proc->p_cwd = NULL;
+#if OPT_A2
+    proc->waitcv=cv_create("waitcv");
+    if(proc->waitcv==NULL)
+    {
+        panic("Could not create WaitCV");
+    }
+#endif
 
 #ifdef UW
 	proc->console = NULL;
 #endif // UW
-
+    processList[i]=proc;
+    proc->exited=false;
+    
+    lock_release(mutex);
 	return proc;
 }
 
@@ -135,7 +185,9 @@ proc_destroy(struct proc *proc)
 		VOP_DECREF(proc->p_cwd);
 		proc->p_cwd = NULL;
 	}
-
+#ifdef OPT_A2
+    processList[proc->p_pid]=NULL;
+#endif
 
 #ifndef UW  // in the UW version, space destruction occurs in sys_exit, not here
 	if (proc->p_addrspace) {
@@ -183,6 +235,8 @@ proc_destroy(struct proc *proc)
 	}
 	V(proc_count_mutex);
 #endif // UW
+
+
 	
 
 }
@@ -193,6 +247,15 @@ proc_destroy(struct proc *proc)
 void
 proc_bootstrap(void)
 {
+
+#if OPT_A2
+    int i;
+    for(i=0;i<256;i++)
+    {
+        processList[i]=NULL;
+    }
+#endif
+
   kproc = proc_create("[kernel]");
   if (kproc == NULL) {
     panic("proc_create for kproc failed\n");
@@ -208,6 +271,17 @@ proc_bootstrap(void)
     panic("could not create no_proc_sem semaphore\n");
   }
 #endif // UW 
+
+#if OPT_A2
+    struct lock *lockForTable=lock_create("lockForTable");
+    if (lockForTable == NULL) {
+    panic("could not create lockForTable\n");
+  }
+    kproc->parent=NULL;
+#endif
+
+
+    
 }
 
 /*
@@ -217,7 +291,7 @@ proc_bootstrap(void)
  * process's (that is, the kernel menu's) current directory.
  */
 struct proc *
-proc_create_runprogram(const char *name)
+proc_create_runprogram(const char *name) // this is the root process. The runprogram command is the first process run by the kernel. So need to implement pid assignment here too.
 {
 	struct proc *proc;
 	char *console_path;
@@ -226,6 +300,9 @@ proc_create_runprogram(const char *name)
 	if (proc == NULL) {
 		return NULL;
 	}
+#ifdef OPT_A2
+   proc->parent=curproc;
+#endif
 
 #ifdef UW
 	/* open the console - this should always succeed */
@@ -242,6 +319,7 @@ proc_create_runprogram(const char *name)
 	/* VM fields */
 
 	proc->p_addrspace = NULL;
+
 
 	/* VFS fields */
 
@@ -270,7 +348,7 @@ proc_create_runprogram(const char *name)
 	proc_count++;
 	V(proc_count_mutex);
 #endif // UW
-
+    
 	return proc;
 }
 
@@ -363,4 +441,9 @@ curproc_setas(struct addrspace *newas)
 	proc->p_addrspace = newas;
 	spinlock_release(&proc->p_lock);
 	return oldas;
+}
+
+struct proc *getProcessFromPid(pid_t pid)
+{
+    return processList[pid];
 }

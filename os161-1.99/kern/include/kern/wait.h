@@ -41,7 +41,7 @@
 
 /* Special "pids" to wait for. */
 #define WAIT_ANY     (-1)	/* Any child process. */
-#define WAIT_MYPGRP  0		/* Any process in the same process group. */
+#define WAIT_MYPGRP  0		/* Any process in the same process group. */set_pro
 
 /*
  * Result encoding.

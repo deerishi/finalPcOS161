@@ -128,6 +128,9 @@ syscall(struct trapframe *tf)
 			    (userptr_t)tf->tf_a1,
 			    (int)tf->tf_a2,
 			    (pid_t *)&retval);
+	
+	case SYS__fork :
+	    err=sys_fork(tf);
 	  break;
 #endif // UW
 
@@ -177,7 +180,18 @@ syscall(struct trapframe *tf)
  * Thus, you can trash it and do things another way if you prefer.
  */
 void
-enter_forked_process(struct trapframe *tf)
-{
-	(void)tf;
+enter_forked_process(void *data1, unsigned long data2 )
+{   
+    struct trapframe tf=struct trapframe *)data1; 
+	struct addrspace *addr=(struct addrspace *)data2;
+	struct trapframe childTrapFrame=*tf;
+	kfree(tf);
+	struct addrspace *old= curproc_setas(addr);
+	childTrapFrame.tf_epc+=4;
+	as_activate();
+	mips_usermode(&tf);
+	tf->tf_v0=0;
+    tf->tf_a3=0;
+    return 0;
+	
 }

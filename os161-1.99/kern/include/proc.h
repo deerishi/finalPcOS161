@@ -38,12 +38,16 @@
 
 #include <spinlock.h>
 #include <thread.h> /* required for struct threadarray */
-
+#include "opt-A2.h"
 struct addrspace;
 struct vnode;
 #ifdef UW
 struct semaphore;
 #endif // UW
+
+#if OPT_A2
+extern struct lock *lockForTable; //i.e for the process array. we would need mutual exclusion for this
+#endif
 
 /*
  * Process structure.
@@ -69,6 +73,15 @@ struct proc {
 #endif
 
 	/* add more material here as needed */
+	pid_t t_pid;
+#if	OPT_A2
+	//pid_t p_pid; // pid of the parent
+	bool exited;
+	int exitCode;
+	struct proc *parent;
+	struct cv *waitcv;
+#endif
+
 };
 
 /* This is the process structure for the kernel and for kernel-only threads. */
@@ -100,5 +113,8 @@ struct addrspace *curproc_getas(void);
 /* Change the address space of the current process, and return the old one. */
 struct addrspace *curproc_setas(struct addrspace *);
 
+#if OPT_A2
+struct proc *getProcessFromPid(pid_t pid);
+#endif
 
 #endif /* _PROC_H_ */

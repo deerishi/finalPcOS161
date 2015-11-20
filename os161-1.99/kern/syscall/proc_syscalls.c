@@ -20,7 +20,8 @@ void sys__exit(int exitcode) {
   /* for now, just include this to keep the compiler from complaining about
      an unused variable */
   (void)exitcode;
-
+    p->exitCode=exitcode;
+    p>exit=__WEXITED;
   DEBUG(DB_SYSCALL,"Syscall: _exit(%d)\n",exitcode);
 
   KASSERT(curproc->p_addrspace != NULL);
@@ -41,7 +42,7 @@ void sys__exit(int exitcode) {
 
   /* if this is the last user process in the system, proc_destroy()
      will wake up the kernel menu thread */
-  proc_destroy(p);
+  //proc_destroy(p); dont destroy the process here, we might need it later
   
   thread_exit();
   /* thread_exit() does not return, so we should never get here */
@@ -55,7 +56,7 @@ sys_getpid(pid_t *retval)
 {
   /* for now, this is just a stub that always returns a PID of 1 */
   /* you need to fix this to make it work properly */
-  *retval = 1;
+  *retval = curthread->t_proc->p_pid;
   return(0);
 }
 
@@ -69,7 +70,15 @@ sys_waitpid(pid_t pid,
 {
   int exitstatus;
   int result;
-
+  lock_acquire(lockForTable);
+    struct proc *process=getProcessFromPid(pid); //get the process structure for the parent
+    if(process->parent!=curproc) //meaning that the parent is not calling the 
+    {
+        status=-1;
+        lock_release(lockForTable);
+        return EAGAIN;
+        
+    }
   /* this is just a stub implementation that always reports an
      exit status of 0, regardless of the actual exit status of
      the specified process.   
@@ -78,8 +87,13 @@ sys_waitpid(pid_t pid,
 
      Fix this!
   */
-
+    if(processList[process]==NULL) //that is the child process is NULL
+    {
+        lock_release(lockForTable);
+        return 
+    }
   if (options != 0) {
+  lock_release(lockForTable);
     return(EINVAL);
   }
   /* for now, just pretend the exitstatus is 0 */
@@ -90,5 +104,37 @@ sys_waitpid(pid_t pid,
   }
   *retval = pid;
   return(0);
+}
+
+pid_t sys_fork(struct trapframe *tf)
+{
+    
+    const char childName="ChildProcess";
+    struct proc childProcess=proc_create_runprogram(childName)   ; //Creates the process for the child
+    if(childProcess==NULL)
+    {
+        panic("Could Not Create child process\n");
+    }
+    struct trapframe copy=kmalloc(sizeof((struct trapframe *tf)));
+    copy=tf;
+    struct addrspace *childProcessAddress;
+    int flag=as_copy(childProcess->p_addrspace,&childProcessAddress);
+    if(flag==ENOMEM)
+    {
+        //Means out of memory 
+        tf->tf_v0=ENOMEM;
+        tf->tf_a3=1;
+        return -1;
+    }
+    int spl=splhigh();
+    int res=thread_fork(childName,childProcess, enter_forked_process,copy,childProcessAddress);
+    enter_forked_process(tf);
+    //loading the success parameters
+    tf->tf_v0=childProcess->p_pid;
+    tf->tf_a3=0;
+    splx(spl);
+    return childProcess->p_pid;
+
+    
 }
 
