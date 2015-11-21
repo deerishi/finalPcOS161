@@ -39,6 +39,7 @@
 #include <spinlock.h>
 #include <thread.h> /* required for struct threadarray */
 #include "opt-A2.h"
+
 struct addrspace;
 struct vnode;
 #ifdef UW
@@ -47,6 +48,7 @@ struct semaphore;
 
 #if OPT_A2
 extern struct lock *lockForTable; //i.e for the process array. we would need mutual exclusion for this
+void decoupleParents(pid_t pid);
 #endif
 
 /*
@@ -73,10 +75,10 @@ struct proc {
 #endif
 
 	/* add more material here as needed */
-	pid_t t_pid;
+	pid_t pid;
 #if	OPT_A2
 	//pid_t p_pid; // pid of the parent
-	bool exited;
+	int exited;
 	int exitCode;
 	struct proc *parent;
 	struct cv *waitcv;

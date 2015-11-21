@@ -22,7 +22,15 @@ void sys__exit(int exitcode) {
   (void)exitcode;
     p->exitCode=exitcode;
     p>exit=__WEXITED;
-  DEBUG(DB_SYSCALL,"Syscall: _exit(%d)\n",exitcode);
+    decoupleParents(p->pid); //decouple this process from its children
+    if(p->parent==NULL) //MEANS THAT THE PARENT OF THE PROCESS HAS ALREADY EXITED THEN WE CAN SIMPLY DESTROY THE PROCESS
+    {
+        proc_destroy(p);
+    }
+    DEBUG(DB_SYSCALL,"Syscall: _exit(%d)\n",exitcode);
+  
+  
+  
 
   KASSERT(curproc->p_addrspace != NULL);
   as_deactivate();

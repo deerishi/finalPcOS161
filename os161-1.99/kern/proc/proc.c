@@ -87,15 +87,26 @@ struct lock *mutex;
 
 #ifdef OPT_A2
 //clean up exited PID's'
-void clean_up_exitedPids()
+void decoupleParents(pid_t pid)
 {
+    struct *proc=getProcessFromPid(pid);
     int i;
     for(i=0;i<256;i++)
     {
-        if(processList[i]!=NULL && )
+        if(processList[i]!=NULL && processList[i]->parent->pid==pid)
+        {
+            if(processList[i]->exited!=__WEXITED)
+            {
+                processList[i]->parent=NULL; //Remove the parent child relationship form the child 
+            }
+            else
+            {
+                
+            }
+        }
     }
 }
-
+#endif
 
 struct proc *
 proc_create(const char *name)
