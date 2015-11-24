@@ -9,6 +9,9 @@
 #include <thread.h>
 #include <addrspace.h>
 #include <copyinout.h>
+#include <synch.h>
+#include <mips/trapframe.h>
+#include <spl.h>
 
   /* this implementation of sys__exit does not do anything with the exit code */
   /* this needs to be fixed to get exit() and waitpid() working properly */
@@ -19,16 +22,31 @@ void sys__exit(int exitcode) {
   struct proc *p = curproc;
   /* for now, just include this to keep the compiler from complaining about
      an unused variable */
-  (void)exitcode;
+    lock_acquire(lockForTable);
+    
+    (void)exitcode;
     p->exitCode=exitcode;
-    p>exit=__WEXITED;
+    p->exited=__WEXITED;
     decoupleParents(p->pid); //decouple this process from its children
     if(p->parent==NULL) //MEANS THAT THE PARENT OF THE PROCESS HAS ALREADY EXITED THEN WE CAN SIMPLY DESTROY THE PROCESS
     {
+        KASSERT(curproc->p_addrspace != NULL);
+        as_deactivate();
+        as = curproc_setas(NULL);
+        as_destroy(as);
+        lock_release(lockForTable);
         proc_destroy(p);
+        
+        thread_exit();
+        panic("return from thread_exit in sys_exit\n");
     }
+   // else
+  //  {
+    //    decoupleParents(p->pid);
+   // }
     DEBUG(DB_SYSCALL,"Syscall: _exit(%d)\n",exitcode);
-  
+    lock_release(lockForTable);
+    cv_signal(p->waitcv,lockForTable);
   
   
 
@@ -46,7 +64,7 @@ void sys__exit(int exitcode) {
 
   /* detach this thread from its process */
   /* note: curproc cannot be used after this call */
-  proc_remthread(curthread);
+  //proc_remthread(curthread);
 
   /* if this is the last user process in the system, proc_destroy()
      will wake up the kernel menu thread */
@@ -64,7 +82,7 @@ sys_getpid(pid_t *retval)
 {
   /* for now, this is just a stub that always returns a PID of 1 */
   /* you need to fix this to make it work properly */
-  *retval = curthread->t_proc->p_pid;
+  *retval = curthread->t_proc->pid;
   return(0);
 }
 
@@ -82,7 +100,7 @@ sys_waitpid(pid_t pid,
     struct proc *process=getProcessFromPid(pid); //get the process structure for the parent
     if(process->parent!=curproc) //meaning that the parent is not calling the 
     {
-        status=-1;
+        //status=-1;
         lock_release(lockForTable);
         return EAGAIN;
         
@@ -95,35 +113,45 @@ sys_waitpid(pid_t pid,
 
      Fix this!
   */
-    if(processList[process]==NULL) //that is the child process is NULL
+    if(process==NULL) //that is the child process is NULL, meaning that its alraeady destroyed
     {
         lock_release(lockForTable);
-        return 
+        return ESRCH;
+    }
+    if(process->exited!=__WEXITED) //means that the child rpocess has not  exited 
+    {
+        while(process->exited!=__WEXITED)
+        {
+            cv_wait(process->waitcv,lockForTable);
+        }
+        //return process->pid;
     }
   if (options != 0) {
   lock_release(lockForTable);
     return(EINVAL);
   }
   /* for now, just pretend the exitstatus is 0 */
-  exitstatus = 0;
+  exitstatus = process->exitCode;
   result = copyout((void *)&exitstatus,status,sizeof(int));
   if (result) {
+          lock_release(lockForTable);
     return(result);
   }
   *retval = pid;
+          lock_release(lockForTable);
   return(0);
 }
 
-pid_t sys_fork(struct trapframe *tf)
+int sys_fork(struct trapframe *tf)
 {
     
-    const char childName="ChildProcess";
-    struct proc childProcess=proc_create_runprogram(childName)   ; //Creates the process for the child
+    const char *childName="ChildProcess";
+    struct proc *childProcess=proc_create_runprogram(childName)   ; //Creates the process for the child
     if(childProcess==NULL)
     {
         panic("Could Not Create child process\n");
     }
-    struct trapframe copy=kmalloc(sizeof((struct trapframe *tf)));
+    struct trapframe *copy=kmalloc(sizeof(*tf));
     copy=tf;
     struct addrspace *childProcessAddress;
     int flag=as_copy(childProcess->p_addrspace,&childProcessAddress);
@@ -135,13 +163,18 @@ pid_t sys_fork(struct trapframe *tf)
         return -1;
     }
     int spl=splhigh();
-    int res=thread_fork(childName,childProcess, enter_forked_process,copy,childProcessAddress);
-    enter_forked_process(tf);
+   	struct addrspace *old= curproc_setas(childProcessAddress);
+   	old=old;
+    as_activate();
+    //struct thread **ret;
+    int res=thread_fork(childName,childProcess,(void *) enter_forked_process, copy,0);
+    res=res;
     //loading the success parameters
-    tf->tf_v0=childProcess->p_pid;
+    tf->tf_v0=childProcess->pid;
     tf->tf_a3=0;
     splx(spl);
-    return childProcess->p_pid;
+    //retpid=childProcess->pid;
+    return childProcess->pid;
 
     
 }

@@ -72,7 +72,7 @@ static struct cpuarray allcpus;
 /* Used to wait for secondary CPUs to come online. */
 static struct semaphore *cpu_startup_sem;
 
-static struct *process[256]; //have made a static struct process 
+
 ////////////////////////////////////////////////////////////
 
 /*

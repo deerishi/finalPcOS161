@@ -75,9 +75,10 @@ struct proc {
 #endif
 
 	/* add more material here as needed */
-	pid_t pid;
+	
 #if	OPT_A2
 	//pid_t p_pid; // pid of the parent
+	pid_t pid;
 	int exited;
 	int exitCode;
 	struct proc *parent;
@@ -97,6 +98,8 @@ extern struct semaphore *no_proc_sem;
 /* Call once during system startup to allocate data structures. */
 void proc_bootstrap(void);
 
+
+struct proc *proc_create(const char *name);
 /* Create a fresh process for use by runprogram(). */
 struct proc *proc_create_runprogram(const char *name);
 

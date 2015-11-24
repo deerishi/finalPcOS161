@@ -47,6 +47,7 @@
 #include <current.h>
 #include <addrspace.h>
 #include <vnode.h>
+#include <kern/wait.h>
 #include <vfs.h>
 #include <synch.h>
 #include <kern/fcntl.h> 
@@ -76,7 +77,7 @@ struct proc *processList[256]; //no need to declare static. the whole pooint if 
 //variable in a header file. always declare it in the .c file, if you wanna use that variable in 
 //mulitple .c file its best to declare the variable as extern in the .h file.
 
-struct lock *mutex;
+struct lock *lockForTable;
 #endif
 
 /*
@@ -89,7 +90,7 @@ struct lock *mutex;
 //clean up exited PID's'
 void decoupleParents(pid_t pid)
 {
-    struct *proc=getProcessFromPid(pid);
+    //struct proc *process=getProcessFromPid(pid);
     int i;
     for(i=0;i<256;i++)
     {
@@ -101,7 +102,8 @@ void decoupleParents(pid_t pid)
             }
             else
             {
-                
+                proc_destroy(processList[i]);
+                //implement pid resuse mechanism in proc_destroy
             }
         }
     }
@@ -113,7 +115,7 @@ proc_create(const char *name)
 {
 #if OPT_A2
      int i;
-     lock_acquire(mutex);
+     lock_acquire(lockForTable);
     for(i=2;i<=256;i++)
     {
         if(processList[i]==NULL)
@@ -140,7 +142,7 @@ proc_create(const char *name)
 		kfree(proc);
 		return NULL;
 	}
-    proc->p_pid=i;
+    proc->pid=i;
 	threadarray_init(&proc->p_threads);
 	spinlock_init(&proc->p_lock);
 
@@ -155,15 +157,18 @@ proc_create(const char *name)
     {
         panic("Could not create WaitCV");
     }
+    proc->exited=-1;// making the exit status other than __WEXITED
+    proc->parent=curproc;
+    processList[i]=proc;
+    proc->exited=false;
 #endif
 
 #ifdef UW
 	proc->console = NULL;
 #endif // UW
-    processList[i]=proc;
-    proc->exited=false;
     
-    lock_release(mutex);
+    
+    lock_release(lockForTable);
 	return proc;
 }
 
@@ -181,26 +186,30 @@ proc_destroy(struct proc *proc)
          * be defined because the calling thread may have already detached itself
          * from the process.
 	 */
+/*	 	
 
-	KASSERT(proc != NULL);
-	KASSERT(proc != kproc);
-
-	/*
+	
 	 * We don't take p_lock in here because we must have the only
 	 * reference to this structure. (Otherwise it would be
 	 * incorrect to destroy it.)
 	 */
 
 	/* VFS fields */
+	
+	KASSERT(proc != NULL);
+	KASSERT(proc != kproc);
+	lock_acquire(lockForTable);
 	if (proc->p_cwd) {
 		VOP_DECREF(proc->p_cwd);
 		proc->p_cwd = NULL;
 	}
 #ifdef OPT_A2
-    processList[proc->p_pid]=NULL;
+    processList[proc->pid]=NULL;
+    kfree(proc->waitcv); //since wautcv was allocated by kmalloc , we should free it 
 #endif
 
-#ifndef UW  // in the UW version, space destruction occurs in sys_exit, not here
+  // in the UW version, space destruction occurs in sys_exit, not here
+#ifndef UW
 	if (proc->p_addrspace) {
 		/*
 		 * In case p is the currently running process (which
@@ -218,8 +227,10 @@ proc_destroy(struct proc *proc)
 		as = curproc_setas(NULL);
 		as_destroy(as);
 	}
-#endif // UW
-
+#endif
+/* detach this thread from its process */
+  /* note: curproc cannot be used after this call */
+  //proc_remthread(curthread);
 #ifdef UW
 	if (proc->console) {
 	  vfs_close(proc->console);
@@ -228,6 +239,7 @@ proc_destroy(struct proc *proc)
 
 	threadarray_cleanup(&proc->p_threads);
 	spinlock_cleanup(&proc->p_lock);
+    
 
 	kfree(proc->p_name);
 	kfree(proc);
@@ -246,9 +258,7 @@ proc_destroy(struct proc *proc)
 	}
 	V(proc_count_mutex);
 #endif // UW
-
-
-	
+ lock_release(lockForTable);
 
 }
 
@@ -265,6 +275,10 @@ proc_bootstrap(void)
     {
         processList[i]=NULL;
     }
+    lockForTable=lock_create("lockForTable");
+    if (lockForTable == NULL) {
+    panic("could not create lockForTable\n");
+  }
 #endif
 
   kproc = proc_create("[kernel]");
@@ -284,10 +298,6 @@ proc_bootstrap(void)
 #endif // UW 
 
 #if OPT_A2
-    struct lock *lockForTable=lock_create("lockForTable");
-    if (lockForTable == NULL) {
-    panic("could not create lockForTable\n");
-  }
     kproc->parent=NULL;
 #endif
 

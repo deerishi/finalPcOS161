@@ -101,12 +101,14 @@ boot(void)
 	kprintf("%s", harvard_copyright);
 	kprintf("\n");
 
-	kprintf("Put-your-group-name-here's system version %s (%s #%d)\n", 
+	kprintf("Deepak's system version %s (%s #%d)\n", 
 		GROUP_VERSION, buildconfig, buildversion);
 	kprintf("\n");
 
 	/* Early initialization. */
+	panic("1 ram_bootstrap");
 	ram_bootstrap();
+	panic("ram_bootstrap");
 	proc_bootstrap();
 	thread_bootstrap();
 	hardclock_bootstrap();
@@ -205,6 +207,7 @@ sys_reboot(int code)
 void
 kmain(char *arguments)
 {
+    panic("kmain");
 	boot();
 
 	menu(arguments);
